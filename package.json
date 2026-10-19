@@ -1,0 +1,20 @@
+{
+  "name": "chatterbox-desktop",
+  "version": "1.0.0",
+  "description": "Your personal WhatsApp desktop companion",
+  "author": "Chatterbox",
+  "private": true,
+  "repository": { "type": "git", "url": "https://github.com/CS-Colin/ChatterBox.git" },
+  "main": "main.js",
+  "scripts": { "start": "electron .", "dist": "electron-builder --config electron-builder.config.cjs --win nsis --publish never", "release": "electron-builder --config electron-builder.config.cjs --win nsis --publish always" },
+  "dependencies": { "electron-updater": "^6.6.2" },
+  "devDependencies": { "electron": "^40.0.0", "electron-builder": "^26.0.12" },
+  "build": {
+    "appId": "local.chatterbox.desktop",
+    "productName": "Chatterbox",
+    "directories": { "output": "release" },
+    "files": ["main.js", "preload.js", "ui/**", "package.json"],
+    "win": { "target": "nsis" },
+    "nsis": { "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "deleteAppDataOnUninstall": false }
+  }
+}

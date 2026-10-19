@@ -1,0 +1,29 @@
+name: Windows release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Validate sources
+        run: |
+          node --check main.js
+          node --check preload.js
+          node --check ui/app.js
+          node --check ui/settings.js
+      - name: Build and publish installer and update manifest
+        run: npm run release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
