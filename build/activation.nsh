@@ -5,16 +5,22 @@ Var InviteDialog
 Var InviteInput
 Var InviteCode
 Var InviteValid
+Var InviteDataDir
 !endif
 
 !macro customInit
+  SetShellVarContext current
+  StrCpy $InviteDataDir "$APPDATA\chatterbox-desktop"
+  ${If} $installMode == "all"
+    SetShellVarContext all
+  ${EndIf}
   InitPluginsDir
   SetOutPath "$PLUGINSDIR\chatterbox"
   File /oname=verify.ps1 "${BUILD_RESOURCES_DIR}\..\licensing\verify.ps1"
   File /oname=public.xml "${BUILD_RESOURCES_DIR}\..\licensing\public.xml"
   StrCpy $InviteValid "0"
-  ${If} ${FileExists} "$APPDATA\chatterbox-desktop\activation.code"
-    CopyFiles /SILENT "$APPDATA\chatterbox-desktop\activation.code" "$PLUGINSDIR\chatterbox\activation.code"
+  ${If} ${FileExists} "$InviteDataDir\activation.code"
+    CopyFiles /SILENT "$InviteDataDir\activation.code" "$PLUGINSDIR\chatterbox\activation.code"
     Call VerifyInvite
     Pop $0
     ${If} $0 == "0"
@@ -80,6 +86,6 @@ FunctionEnd
     SetErrorLevel 1
     Abort "A valid invitation is required."
   ${EndIf}
-  CreateDirectory "$APPDATA\chatterbox-desktop"
-  CopyFiles /SILENT "$PLUGINSDIR\chatterbox\activation.code" "$APPDATA\chatterbox-desktop\activation.code"
+  CreateDirectory "$InviteDataDir"
+  CopyFiles /SILENT "$PLUGINSDIR\chatterbox\activation.code" "$InviteDataDir\activation.code"
 !macroend
