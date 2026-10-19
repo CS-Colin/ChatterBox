@@ -14,7 +14,7 @@
     "productName": "Chatterbox",
     "directories": { "output": "release" },
     "files": ["main.js", "preload.js", "ui/**", "package.json"],
-    "win": { "target": "nsis" },
+    "win": { "target": "nsis", "artifactName": "Chatterbox-Setup-${version}.${ext}" },
     "nsis": { "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "deleteAppDataOnUninstall": false }
   }
 }
