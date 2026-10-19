@@ -21,9 +21,25 @@ jobs:
           node --check preload.js
           node --check ui/app.js
           node --check ui/settings.js
-      - name: Build and publish installer and update manifest
-        run: npm run release
+      - name: Build installer and update manifest
+        run: npm run dist
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Upload all release files
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tag = "v$version"
+          gh release view $tag --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --repo $env:GITHUB_REPOSITORY --verify-tag --title "Chatterbox $version" --notes "Chatterbox for Windows with GitHub updates."
+            if ($LASTEXITCODE -ne 0) { throw 'Could not create release' }
+          }
+          $assets = @(Get-ChildItem release -File | Where-Object { $_.Extension -in '.exe', '.blockmap' -or $_.Name -eq 'latest.yml' })
+          if ($assets.Count -ne 3) { throw 'Expected installer, blockmap, and latest.yml' }
+          gh release upload $tag @($assets.FullName) --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Could not upload release assets' }
