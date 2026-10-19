@@ -2,6 +2,8 @@ const {app, BrowserWindow, WebContentsView, Menu, Tray, nativeImage, shell, ipcM
 const {autoUpdater} = require('electron-updater');
 const fs = require('node:fs');
 const path = require('node:path');
+const {readActivation} = require('./licensing/verify');
+let activation;
 let win, chat, tray, prefs, quitting = false;
 const configPath = () => path.join(app.getPath('userData'), 'settings.json');
 function settings() { try { return JSON.parse(fs.readFileSync(configPath(), 'utf8')); } catch { return {}; } }
@@ -55,12 +57,12 @@ ipcMain.handle('action',async (event,action,value) => {
   if(![win.webContents,prefs?.webContents].includes(event.sender) || event.senderFrame !== event.sender.mainFrame) return;
   if(action === 'open-settings') {
     if(prefs && !prefs.isDestroyed()) return prefs.focus();
-    prefs = new BrowserWindow({parent:win,width:540,height:430,resizable:false,title:'Chatterbox Settings',autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
+    prefs = new BrowserWindow({parent:win,width:540,height:580,resizable:false,title:'Chatterbox Settings',autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
     prefs.loadFile('ui/settings.html'); prefs.on('closed',() => {prefs=null;}); return;
   }
   if(action === 'reload') chat.webContents.reload();
   if(action === 'updates') return checkUpdates();
-  if(action === 'settings') return {githubRepo:settings().githubRepo || '',version:app.getVersion(),startup:app.getLoginItemSettings().openAtLogin};
+  if(action === 'settings') return {githubRepo:settings().githubRepo || '',version:app.getVersion(),startup:app.getLoginItemSettings().openAtLogin,activation:activation ? {name:activation.name,id:activation.id} : null};
   if(action === 'save') {
     const githubRepo = String(value.githubRepo || '').trim().replace(/^https:\/\/github\.com\//,'').replace(/\/$/,'');
     if(githubRepo && !/^[\w.-]+\/[\w.-]+$/.test(githubRepo)) throw new Error('Use owner/repository.');
@@ -78,7 +80,14 @@ autoUpdater.on('download-progress',p => status(`Downloading update: ${Math.round
 autoUpdater.on('update-downloaded',async () => {const r=await dialog.showMessageBox(win,{message:'Update ready. Restart Chatterbox to install it?',buttons:['Restart and install','Later'],cancelId:1}); if(r.response===0) {quitting=true;autoUpdater.quitAndInstall();}});
 if(!app.requestSingleInstanceLock()) app.quit(); else {
   app.on('second-instance',() => {if(win) show();});
-  app.whenReady().then(create);
+  app.whenReady().then(() => {
+    activation = readActivation(path.join(app.getPath('userData'),'activation.code'));
+    if(!activation) {
+      dialog.showErrorBox('Chatterbox invitation required','Install Chatterbox with a valid invitation code from Colin to activate this app.');
+      app.quit(); return;
+    }
+    create();
+  });
   app.on('before-quit',() => {quitting=true;});
   app.on('window-all-closed',() => app.quit());
 }

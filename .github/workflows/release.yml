@@ -21,6 +21,7 @@ jobs:
           node --check preload.js
           node --check ui/app.js
           node --check ui/settings.js
+          node --test licensing/verify.test.js
       - name: Build installer and update manifest
         run: npm run dist
         env:

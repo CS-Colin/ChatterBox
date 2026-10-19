@@ -2,6 +2,12 @@
 
 Your personal WhatsApp Web desktop companion. Independent software, not affiliated with WhatsApp or Meta.
 
+## Invitations (version 1.1 and later)
+
+The installer requires a signed invitation code from Colin. It verifies the signature offline before proceeding, stores activation in the current Windows user's app data, and the app verifies it again before loading WhatsApp. Settings shows the activated recipient name and invitation ID. Existing valid activations carry over to updates and reinstalls. First-time silent installs without activation exit before changing the installation. Users upgrading from 1.0 must run the 1.1 installer interactively and enter their invitation once.
+
+The private invitation generator and signing key are maintained separately by the owner, outside this repository. Never commit a private key or a real invitation code. Only public verification keys are shipped here. Invitation codes are perpetual and reusable, with no online revocation, device binding, or one-use enforcement. Because this is an open-source app, a modified build can remove the checks. Version 1.0 remains unrestricted.
+
 ## Run and build
 
 Install Node.js, then run `npm install` in this folder. Use `npm start` to run locally and `npm run dist` to create the Windows installer in `release/`. The installer supports a per-user installation, a desktop shortcut, an uninstaller and a selectable destination.
