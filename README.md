@@ -4,7 +4,7 @@ Your personal WhatsApp Web desktop companion. Independent software, not affiliat
 
 ## Multiple WhatsApp accounts (1.2)
 
-Use **+ Add account** in the sidebar, enter a label such as Work, and scan the new QR code from that number's WhatsApp Linked devices screen. Click an account to switch; **Rename selected account** changes its label. Each number has its own saved browser session. The original Personal account uses the same storage as previous versions, preserving the existing login. The last selected account reopens on launch. Opened accounts remain running in the background until the app quits; accounts are loaded when first selected after launch. To sign out of a number, use WhatsApp's own Log out command while that account is selected. Activation covers the app and does not need repeating for additional WhatsApp accounts.
+Open **Accounts** beside **Edit** in the top menu. Choose **Add account**, enter a label such as Work, and scan the new QR code from that number's WhatsApp Linked devices screen. Choose a name in the Accounts menu to switch; **Rename selected account** changes its label. A checkmark identifies the selected account. WhatsApp uses the full window width. Each number has its own saved browser session. The original Personal account uses the same storage as previous versions, preserving the existing login. The last selected account reopens on launch. Opened accounts remain running in the background until the app quits; accounts are loaded when first selected after launch. To sign out of a number, use WhatsApp's own Log out command while that account is selected. Activation covers the app and does not need repeating for additional WhatsApp accounts.
 
 ## Invitations (version 1.1 and later)
 

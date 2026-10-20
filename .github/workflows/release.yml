@@ -21,6 +21,7 @@ jobs:
           node --check preload.js
           node --check ui/app.js
           node --check ui/settings.js
+          node --check ui/account.js
           node --test licensing/verify.test.js
           node --test accounts.test.js
       - name: Build installer and update manifest

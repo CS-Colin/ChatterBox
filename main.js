@@ -7,15 +7,34 @@ const {normalizeAccounts,partitionFor,newAccount} = require('./accounts');
 const accountViews = new Map();
 let accountState;
 let activation;
-let win, chat, tray, prefs, quitting = false;
+let win, chat, tray, prefs, accountEditor, editorAccountId, quitting = false;
 const configPath = () => path.join(app.getPath('userData'), 'settings.json');
 function settings() { try { return JSON.parse(fs.readFileSync(configPath(), 'utf8')); } catch { return {}; } }
 function saveSettings(patch) { fs.writeFileSync(configPath(),JSON.stringify({...settings(),...patch},null,2)); }
-function sendAccounts() { win.webContents.send('accounts',accountState); }
+function sendAccounts() { win.webContents.send('accounts',accountState); buildMenu(); }
 function status(text) { if(win && !win.isDestroyed()) win.webContents.send('status', text); }
 function trusted(url) { try { const u = new URL(url); return u.protocol === 'https:' && u.hostname === 'web.whatsapp.com'; } catch { return false; } }
 function external(url) { try { if(['https:', 'http:', 'mailto:'].includes(new URL(url).protocol)) shell.openExternal(url); } catch {} }
-function layout() { if(!chat) return; const [width,height] = win.getContentSize(); chat.setBounds({x:208,y:64,width:Math.max(0,width-208),height:Math.max(0,height-64)}); }
+function layout() { if(!chat) return; const [width,height] = win.getContentSize(); chat.setBounds({x:0,y:64,width,height:Math.max(0,height-64)}); }
+function openAccountEditor(id=null) {
+  if(accountEditor && !accountEditor.isDestroyed()) return accountEditor.focus();
+  editorAccountId=id;
+  accountEditor=new BrowserWindow({parent:win,modal:true,width:480,height:320,resizable:false,autoHideMenuBar:true,title:id?'Rename account':'Add WhatsApp account',backgroundColor:'#101b23',webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
+  accountEditor.loadFile(path.join(__dirname,'ui/account.html'));
+  accountEditor.on('closed',()=>{accountEditor=null;editorAccountId=null;});
+}
+function buildMenu() {
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    {label:'Chatterbox',submenu:[{label:'Reload WhatsApp',accelerator:'CmdOrCtrl+R',click:()=>chat.webContents.reload()},{label:'Check for updates',click:checkUpdates},{type:'separator'},{role:'quit'}]},
+    {label:'Edit',submenu:[{role:'undo'},{role:'redo'},{type:'separator'},{role:'cut'},{role:'copy'},{role:'paste'},{role:'selectAll'}]},
+    {label:'Accounts',id:'accounts-menu',submenu:[
+      ...accountState.accounts.map(a=>({id:`account-${a.id}`,label:a.name.replace(/&/g,'&&'),type:'radio',checked:a.id===accountState.activeAccount,click:()=>switchAccount(a.id)})),
+      {type:'separator'},
+      {id:'accounts-add',label:'Add account…',accelerator:'CmdOrCtrl+Shift+N',click:()=>openAccountEditor()},
+      {id:'accounts-rename',label:'Rename selected account…',click:()=>openAccountEditor(accountState.activeAccount)}
+    ]}
+  ]));
+}
 function show() { win.show(); win.restore(); win.focus(); }
 async function checkUpdates() {
   const feed = settings().githubRepo;
@@ -62,7 +81,7 @@ function switchAccount(id) {
 }
 function create() {
   accountState=normalizeAccounts(settings());
-  win = new BrowserWindow({width:1360,height:860,minWidth:1040,minHeight:600,title:'Chatterbox',backgroundColor:'#101b23',webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
+  win = new BrowserWindow({width:1260,height:860,minWidth:800,minHeight:600,title:'Chatterbox',backgroundColor:'#101b23',webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
   win.loadFile(path.join(__dirname,'ui/index.html'));
   switchAccount(accountState.activeAccount);
   win.on('resize',layout);
@@ -74,11 +93,24 @@ function create() {
   win.setIcon(icon); tray = new Tray(icon); tray.setToolTip('Chatterbox');
   tray.setContextMenu(Menu.buildFromTemplate([{label:'Open Chatterbox',click:show},{label:'Check for updates',click:checkUpdates},{type:'separator'},{label:'Quit',click:() => app.quit()}]));
   tray.on('double-click',show);
-  Menu.setApplicationMenu(Menu.buildFromTemplate([{label:'Chatterbox',submenu:[{label:'Reload WhatsApp',accelerator:'CmdOrCtrl+R',click:() => chat.webContents.reload()},{label:'Check for updates',click:checkUpdates},{type:'separator'},{role:'quit'}]},{label:'Edit',submenu:[{role:'undo'},{role:'redo'},{type:'separator'},{role:'cut'},{role:'copy'},{role:'paste'},{role:'selectAll'}]}]));
+  buildMenu();
   if(settings().githubRepo || fs.existsSync(path.join(process.resourcesPath,'app-update.yml'))) setTimeout(checkUpdates,15000);
 }
 ipcMain.handle('action',async (event,action,value) => {
-  if(![win.webContents,prefs?.webContents].includes(event.sender) || event.senderFrame !== event.sender.mainFrame) return;
+  if(![win.webContents,prefs?.webContents,accountEditor?.webContents].includes(event.sender) || event.senderFrame !== event.sender.mainFrame) return;
+  if(action === 'account-editor-state') return {id:editorAccountId,name:accountState.accounts.find(a=>a.id===editorAccountId)?.name || ''};
+  if(action === 'account-editor-save' && event.sender === accountEditor?.webContents) {
+    const name=newAccount(value).name;
+    if(editorAccountId) {
+      const account=accountState.accounts.find(a=>a.id===editorAccountId);
+      if(!account) throw new Error('Account not found');
+      account.name=name; saveSettings(accountState); sendAccounts();
+      win.setTitle(`${name} — Chatterbox`); status(`${name} · Your personal WhatsApp companion`);
+    } else {
+      const account=newAccount(name);accountState.accounts.push(account);switchAccount(account.id);
+    }
+    accountEditor.close();return accountState;
+  }
   if(action === 'accounts') return accountState;
   if(action === 'account-switch') return switchAccount(value);
   if(action === 'account-add') {

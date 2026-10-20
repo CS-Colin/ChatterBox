@@ -1,0 +1,3 @@
+const api=window.chatterbox;
+api.action('account-editor-state').then(state=>{if(state.id){document.getElementById('heading').textContent='Rename account';document.getElementById('help').textContent='Change the label shown in your Accounts menu.';document.getElementById('save').textContent='Save name';}document.getElementById('name').value=state.name;document.getElementById('name').focus();});
+document.querySelector('form').onsubmit=async event=>{event.preventDefault();const button=document.getElementById('save');button.disabled=true;try{await api.action('account-editor-save',document.getElementById('name').value);}catch{document.getElementById('error').textContent='Enter a name of 1–40 characters.';button.disabled=false;}};
