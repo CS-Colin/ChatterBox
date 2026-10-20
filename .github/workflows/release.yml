@@ -24,6 +24,7 @@ jobs:
           node --check ui/account.js
           node --test licensing/verify.test.js
           node --test accounts.test.js
+          node --test memory.test.js
       - name: Build installer and update manifest
         run: npm run dist
         env:

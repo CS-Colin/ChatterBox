@@ -4,7 +4,13 @@ Your personal WhatsApp Web desktop companion. Independent software, not affiliat
 
 ## Multiple WhatsApp accounts (1.2)
 
-Open **Accounts** beside **Edit** in the top menu. Choose **Add account**, enter a label such as Work, and scan the new QR code from that number's WhatsApp Linked devices screen. Choose a name in the Accounts menu to switch; **Rename selected account** changes its label. A checkmark identifies the selected account. WhatsApp uses the full window width. Each number has its own saved browser session. The original Personal account uses the same storage as previous versions, preserving the existing login. The last selected account reopens on launch. Opened accounts remain running in the background until the app quits; accounts are loaded when first selected after launch. To sign out of a number, use WhatsApp's own Log out command while that account is selected. Activation covers the app and does not need repeating for additional WhatsApp accounts.
+Open **Accounts** beside **Edit** in the top menu. Choose **Add account**, enter a label such as Work, and scan the new QR code from that number's WhatsApp Linked devices screen. Choose a name in the Accounts menu to switch; **Rename selected account** changes its label. A checkmark identifies the selected account. WhatsApp uses the full window width. Each number has its own saved browser session. The original Personal account uses the same storage as previous versions, preserving the existing login. The last selected account reopens on launch. All saved accounts load shortly after startup, staggered two seconds apart, and remain running for desktop notifications until the app quits. To sign out of a number, use WhatsApp's own Log out command while that account is selected. Activation covers the app and does not need repeating for additional WhatsApp accounts.
+
+## Memory and desktop notifications (1.2.2)
+
+All account pages stay loaded for notification delivery; none are frozen, discarded or signed out. Background throttling reduces unnecessary timer and animation work. Every five minutes, when total private memory exceeds 512 MiB, unused JavaScript objects are collected from background accounts (and the selected account when the window is not focused). Audible accounts and pages with an attached debugger are skipped. This does not delete cookies, service workers, chats, caches or network connections. Saved accounts are loaded after startup so they do not need to be selected first.
+
+Use Chatterbox > Reclaim unused memory, or the button in Settings, for manual cleanup. Settings reports approximate app private memory. All-account notifications depend on WhatsApp and Windows notification permissions, network connectivity and valid linked sessions. Keeping every account online uses more RAM than unloading inactive accounts. Actual savings depend on the WhatsApp workload; no fixed RAM cap is promised.
 
 ## Invitations (version 1.1 and later)
 
@@ -27,3 +33,4 @@ Upload this project to the repository root, excluding node_modules, build-cache 
 Installed builds check at startup when a repository is configured. Check for updates runs a manual check. Downloads and restarts require confirmation. Connecting and publishing the repository is still required. A complete update test requires two hosted versions and an installed app.
 
 This initial personal build is unsigned. Signing requires a Windows signing identity. Verify the installer and updater on your own machine before wider distribution.
+

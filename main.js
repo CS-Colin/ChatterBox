@@ -4,7 +4,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {readActivation} = require('./licensing/verify');
 const {normalizeAccounts,partitionFor,newAccount} = require('./accounts');
+const {reclaimView,memoryMegabytes} = require('./memory');
 const accountViews = new Map();
+let reclaiming=false,memoryTimer,startupTimer;
 let accountState;
 let activation;
 let win, chat, tray, prefs, accountEditor, editorAccountId, quitting = false;
@@ -25,7 +27,7 @@ function openAccountEditor(id=null) {
 }
 function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    {label:'Chatterbox',submenu:[{label:'Reload WhatsApp',accelerator:'CmdOrCtrl+R',click:()=>chat.webContents.reload()},{label:'Check for updates',click:checkUpdates},{type:'separator'},{role:'quit'}]},
+    {label:'Chatterbox',submenu:[{label:'Reload WhatsApp',accelerator:'CmdOrCtrl+R',click:()=>chat.webContents.reload()},{label:'Reclaim unused memory',click:()=>reclaimMemory(true)},{label:'Check for updates',click:checkUpdates},{type:'separator'},{role:'quit'}]},
     {label:'Edit',submenu:[{role:'undo'},{role:'redo'},{type:'separator'},{role:'cut'},{role:'copy'},{role:'paste'},{role:'selectAll'}]},
     {label:'Accounts',id:'accounts-menu',submenu:[
       ...accountState.accounts.map(a=>({id:`account-${a.id}`,label:a.name.replace(/&/g,'&&'),type:'radio',checked:a.id===accountState.activeAccount,click:()=>switchAccount(a.id)})),
@@ -36,6 +38,24 @@ function buildMenu() {
   ]));
 }
 function show() { win.show(); win.restore(); win.focus(); }
+async function reclaimMemory(manual=false) {
+  if(reclaiming || quitting) return;
+  if(!manual && memoryMegabytes(app.getAppMetrics()) < 512) return;
+  reclaiming=true;
+  try {
+    for(const view of accountViews.values()) {
+      if(quitting) break;
+      if(manual || view!==chat || !win.isFocused()) await reclaimView(view);
+    }
+    if(manual) status('Unused memory cleanup complete · All accounts remain connected');
+  } finally {reclaiming=false;}
+}
+function loadBackgroundAccounts() {
+  const next=accountState.accounts.find(a=>!accountViews.has(a.id));
+  if(!next || quitting) return;
+  accountViews.set(next.id,createAccountView(next));
+  startupTimer=setTimeout(loadBackgroundAccounts,2000);
+}
 async function checkUpdates() {
   const feed = settings().githubRepo;
   const bundledFeed = fs.existsSync(path.join(process.resourcesPath,'app-update.yml'));
@@ -46,7 +66,7 @@ async function checkUpdates() {
   try { await autoUpdater.checkForUpdates(); } catch { status('Could not check for updates. Check your connection and release server.'); }
 }
 function createAccountView(account) {
-  const view = new WebContentsView({webPreferences:{partition:partitionFor(account.id),contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false}});
+  const view = new WebContentsView({webPreferences:{partition:partitionFor(account.id),contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:true}});
   const wc=view.webContents;
   wc.setUserAgent(wc.getUserAgent().replace(/ Electron\/\S+/g,'').replace(/ chatterbox-desktop\/\S+/gi,''));
   const ses = wc.session;
@@ -67,6 +87,7 @@ function createAccountView(account) {
 function switchAccount(id) {
   const account=accountState.accounts.find(a=>a.id===id);
   if(!account) throw new Error('Account not found');
+  if(chat && accountState.activeAccount===id && !chat.webContents.isDestroyed()) return accountState;
   if(chat) win.contentView.removeChildView(chat);
   if(!accountViews.has(id)) accountViews.set(id,createAccountView(account));
   chat=accountViews.get(id);
@@ -84,6 +105,8 @@ function create() {
   win = new BrowserWindow({width:1260,height:860,minWidth:800,minHeight:600,title:'Chatterbox',backgroundColor:'#101b23',webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
   win.loadFile(path.join(__dirname,'ui/index.html'));
   switchAccount(accountState.activeAccount);
+  startupTimer=setTimeout(loadBackgroundAccounts,2000);
+  memoryTimer=setInterval(()=>{reclaimMemory().catch(()=>{});},5*60*1000);
   win.on('resize',layout);
   win.on('close',event => {if(!quitting && tray) {event.preventDefault(); win.hide();}});
   // Use a raster icon for Windows tray compatibility.
@@ -132,7 +155,8 @@ ipcMain.handle('action',async (event,action,value) => {
   }
   if(action === 'reload') chat.webContents.reload();
   if(action === 'updates') return checkUpdates();
-  if(action === 'settings') return {githubRepo:settings().githubRepo || '',version:app.getVersion(),startup:app.getLoginItemSettings().openAtLogin,activation:activation ? {name:activation.name,id:activation.id} : null};
+  if(action === 'memory-reclaim') return reclaimMemory(true);
+  if(action === 'settings') return {githubRepo:settings().githubRepo || '',version:app.getVersion(),startup:app.getLoginItemSettings().openAtLogin,memory:{megabytes:memoryMegabytes(app.getAppMetrics()),connected:accountViews.size,total:accountState.accounts.length},activation:activation ? {name:activation.name,id:activation.id} : null};
   if(action === 'save') {
     const githubRepo = String(value.githubRepo || '').trim().replace(/^https:\/\/github\.com\//,'').replace(/\/$/,'');
     if(githubRepo && !/^[\w.-]+\/[\w.-]+$/.test(githubRepo)) throw new Error('Use owner/repository.');
@@ -158,7 +182,7 @@ if(!app.requestSingleInstanceLock()) app.quit(); else {
     }
     create();
   });
-  app.on('before-quit',() => {quitting=true;for(const view of accountViews.values()) if(!view.webContents.isDestroyed()) view.webContents.close();});
+  app.on('before-quit',() => {quitting=true;clearInterval(memoryTimer);clearTimeout(startupTimer);for(const view of accountViews.values()) if(!view.webContents.isDestroyed()) view.webContents.close();});
   app.on('window-all-closed',() => app.quit());
 }
 
