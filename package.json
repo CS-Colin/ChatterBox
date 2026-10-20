@@ -1,6 +1,6 @@
 {
   "name": "chatterbox-desktop",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Your personal WhatsApp desktop companion",
   "author": "Chatterbox",
   "private": true,
@@ -13,7 +13,7 @@
     "appId": "local.chatterbox.desktop",
     "productName": "Chatterbox",
     "directories": { "output": "release" },
-    "files": ["main.js", "preload.js", "ui/**", "licensing/verify.js", "licensing/public.pem", "package.json"],
+    "files": ["main.js", "accounts.js", "preload.js", "ui/**", "licensing/verify.js", "licensing/public.pem", "package.json"],
     "win": { "target": "nsis", "artifactName": "Chatterbox-Setup-${version}.${ext}" },
     "nsis": { "include": "build/activation.nsh", "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "deleteAppDataOnUninstall": false }
   }

@@ -2,6 +2,10 @@
 
 Your personal WhatsApp Web desktop companion. Independent software, not affiliated with WhatsApp or Meta.
 
+## Multiple WhatsApp accounts (1.2)
+
+Use **+ Add account** in the sidebar, enter a label such as Work, and scan the new QR code from that number's WhatsApp Linked devices screen. Click an account to switch; **Rename selected account** changes its label. Each number has its own saved browser session. The original Personal account uses the same storage as previous versions, preserving the existing login. The last selected account reopens on launch. Opened accounts remain running in the background until the app quits; accounts are loaded when first selected after launch. To sign out of a number, use WhatsApp's own Log out command while that account is selected. Activation covers the app and does not need repeating for additional WhatsApp accounts.
+
 ## Invitations (version 1.1 and later)
 
 The installer requires a signed invitation code from Colin. It verifies the signature offline before proceeding, stores activation in the current Windows user's app data, and the app verifies it again before loading WhatsApp. Settings shows the activated recipient name and invitation ID. Existing valid activations carry over to updates and reinstalls. First-time silent installs without activation exit before changing the installation. Users upgrading from 1.0 must run the 1.1 installer interactively and enter their invitation once.

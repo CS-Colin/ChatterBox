@@ -3,14 +3,19 @@ const {autoUpdater} = require('electron-updater');
 const fs = require('node:fs');
 const path = require('node:path');
 const {readActivation} = require('./licensing/verify');
+const {normalizeAccounts,partitionFor,newAccount} = require('./accounts');
+const accountViews = new Map();
+let accountState;
 let activation;
 let win, chat, tray, prefs, quitting = false;
 const configPath = () => path.join(app.getPath('userData'), 'settings.json');
 function settings() { try { return JSON.parse(fs.readFileSync(configPath(), 'utf8')); } catch { return {}; } }
+function saveSettings(patch) { fs.writeFileSync(configPath(),JSON.stringify({...settings(),...patch},null,2)); }
+function sendAccounts() { win.webContents.send('accounts',accountState); }
 function status(text) { if(win && !win.isDestroyed()) win.webContents.send('status', text); }
 function trusted(url) { try { const u = new URL(url); return u.protocol === 'https:' && u.hostname === 'web.whatsapp.com'; } catch { return false; } }
 function external(url) { try { if(['https:', 'http:', 'mailto:'].includes(new URL(url).protocol)) shell.openExternal(url); } catch {} }
-function layout() { const [width,height] = win.getContentSize(); chat.setBounds({x:0,y:64,width,height:Math.max(0,height-64)}); }
+function layout() { if(!chat) return; const [width,height] = win.getContentSize(); chat.setBounds({x:208,y:64,width:Math.max(0,width-208),height:Math.max(0,height-64)}); }
 function show() { win.show(); win.restore(); win.focus(); }
 async function checkUpdates() {
   const feed = settings().githubRepo;
@@ -21,28 +26,47 @@ async function checkUpdates() {
   status('Checking for updates…');
   try { await autoUpdater.checkForUpdates(); } catch { status('Could not check for updates. Check your connection and release server.'); }
 }
-function create() {
-  win = new BrowserWindow({width:1260,height:860,minWidth:800,minHeight:600,title:'Chatterbox',backgroundColor:'#101b23',webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
-  win.loadFile('ui/index.html');
-  chat = new WebContentsView({webPreferences:{partition:'persist:whatsapp',contextIsolation:true,nodeIntegration:false,sandbox:true}});
-  win.contentView.addChildView(chat); layout();
-  chat.webContents.setUserAgent(chat.webContents.getUserAgent().replace(/ Electron\/\S+/g,'').replace(/ chatterbox-desktop\/\S+/gi,''));
-  const ses = session.fromPartition('persist:whatsapp');
+function createAccountView(account) {
+  const view = new WebContentsView({webPreferences:{partition:partitionFor(account.id),contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false}});
+  const wc=view.webContents;
+  wc.setUserAgent(wc.getUserAgent().replace(/ Electron\/\S+/g,'').replace(/ chatterbox-desktop\/\S+/gi,''));
+  const ses = wc.session;
   const allowed = new Set(['notifications','media','clipboard-sanitized-write','fullscreen']);
   ses.setPermissionRequestHandler((wc,permission,callback,details) => callback(trusted(details.requestingUrl || wc.getURL()) && allowed.has(permission)));
   ses.setPermissionCheckHandler((wc,permission,origin) => trusted(origin) && allowed.has(permission));
-  chat.webContents.setWindowOpenHandler(({url}) => {external(url); return {action:'deny'};});
-  chat.webContents.on('will-navigate',(event,url) => { if(!trusted(url)) {event.preventDefault(); external(url);} });
-  chat.webContents.on('did-fail-load',(_e,code,_desc,url,main) => {if(main && code !== -3) status('WhatsApp could not load. Check your connection, then press Reload.');});
-  chat.webContents.on('did-finish-load',() => status('Your personal WhatsApp companion'));
+  wc.setWindowOpenHandler(({url}) => {external(url); return {action:'deny'};});
+  wc.on('will-navigate',(event,url) => { if(!trusted(url)) {event.preventDefault(); external(url);} });
+  wc.on('did-fail-load',(_e,code,_desc,url,main) => {if(view === chat && main && code !== -3) status('WhatsApp could not load. Check your connection, then press Reload.');});
+  wc.on('did-finish-load',() => {if(view === chat) status('Your personal WhatsApp companion');});
   ses.on('will-download',async (_e,item) => {
     const result = await dialog.showSaveDialog(win,{defaultPath:path.join(app.getPath('downloads'),path.basename(item.getFilename()))});
     if(result.canceled) item.cancel(); else item.setSavePath(result.filePath);
   });
-  chat.webContents.loadURL('https://web.whatsapp.com');
+  wc.loadURL('https://web.whatsapp.com').catch(()=>{});
+  return view;
+}
+function switchAccount(id) {
+  const account=accountState.accounts.find(a=>a.id===id);
+  if(!account) throw new Error('Account not found');
+  if(chat) win.contentView.removeChildView(chat);
+  if(!accountViews.has(id)) accountViews.set(id,createAccountView(account));
+  chat=accountViews.get(id);
+  win.contentView.addChildView(chat);
+  accountState.activeAccount=id;
+  saveSettings(accountState);
+  layout();
+  win.setTitle(`${account.name} — Chatterbox`);
+  status(`${account.name} · Your personal WhatsApp companion`);
+  sendAccounts();
+  return accountState;
+}
+function create() {
+  accountState=normalizeAccounts(settings());
+  win = new BrowserWindow({width:1360,height:860,minWidth:1040,minHeight:600,title:'Chatterbox',backgroundColor:'#101b23',webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
+  win.loadFile(path.join(__dirname,'ui/index.html'));
+  switchAccount(accountState.activeAccount);
   win.on('resize',layout);
   win.on('close',event => {if(!quitting && tray) {event.preventDefault(); win.hide();}});
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" rx="18" fill="#18b997"/><path d="M15 17h34v25H29L19 51v-9h-4z" fill="white"/><circle cx="25" cy="30" r="3" fill="#18b997"/><circle cx="39" cy="30" r="3" fill="#18b997"/></svg>';
   // Use a raster icon for Windows tray compatibility.
   const pixels = Buffer.alloc(32*32*4);
   for(let y=0;y<32;y++) for(let x=0;x<32;x++) {const i=(y*32+x)*4;const white=x>6&&x<25&&y>7&&y<23; pixels[i]=white?255:151; pixels[i+1]=white?255:185; pixels[i+2]=white?255:24; pixels[i+3]=255;}
@@ -55,10 +79,24 @@ function create() {
 }
 ipcMain.handle('action',async (event,action,value) => {
   if(![win.webContents,prefs?.webContents].includes(event.sender) || event.senderFrame !== event.sender.mainFrame) return;
+  if(action === 'accounts') return accountState;
+  if(action === 'account-switch') return switchAccount(value);
+  if(action === 'account-add') {
+    const account=newAccount(value);
+    accountState.accounts.push(account);
+    return switchAccount(account.id);
+  }
+  if(action === 'account-rename') {
+    const name=newAccount(value).name;
+    accountState.accounts.find(a=>a.id===accountState.activeAccount).name=name;
+    saveSettings(accountState); sendAccounts();
+    win.setTitle(`${name} — Chatterbox`);
+    return accountState;
+  }
   if(action === 'open-settings') {
     if(prefs && !prefs.isDestroyed()) return prefs.focus();
     prefs = new BrowserWindow({parent:win,width:540,height:580,resizable:false,title:'Chatterbox Settings',autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
-    prefs.loadFile('ui/settings.html'); prefs.on('closed',() => {prefs=null;}); return;
+    prefs.loadFile(path.join(__dirname,'ui/settings.html')); prefs.on('closed',() => {prefs=null;}); return;
   }
   if(action === 'reload') chat.webContents.reload();
   if(action === 'updates') return checkUpdates();
@@ -66,7 +104,7 @@ ipcMain.handle('action',async (event,action,value) => {
   if(action === 'save') {
     const githubRepo = String(value.githubRepo || '').trim().replace(/^https:\/\/github\.com\//,'').replace(/\/$/,'');
     if(githubRepo && !/^[\w.-]+\/[\w.-]+$/.test(githubRepo)) throw new Error('Use owner/repository.');
-    fs.writeFileSync(configPath(),JSON.stringify({githubRepo},null,2));
+    saveSettings({githubRepo});
     app.setLoginItemSettings({openAtLogin:!!value.startup});
     status('Settings saved');
   }
@@ -88,7 +126,7 @@ if(!app.requestSingleInstanceLock()) app.quit(); else {
     }
     create();
   });
-  app.on('before-quit',() => {quitting=true;});
+  app.on('before-quit',() => {quitting=true;for(const view of accountViews.values()) if(!view.webContents.isDestroyed()) view.webContents.close();});
   app.on('window-all-closed',() => app.quit());
 }
 
