@@ -1,6 +1,6 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
-const {reclaimView,memoryMegabytes}=require('./memory');
+const {reclaimView,reclaimBrowserMemory,memoryMegabytes,shouldReclaim}=require('./memory');
 function view({busy=false,attached=false,fail=false}={}) {
   const calls=[];
   const wc={isDestroyed:()=>false,isLoadingMainFrame:()=>false,isCurrentlyAudible:()=>busy,debugger:{isAttached:()=>attached,attach:()=>{attached=true;calls.push('attach');},sendCommand:async command=>{calls.push(command);if(fail)throw Error('test');},detach:()=>{attached=false;calls.push('detach');}}};
@@ -17,4 +17,12 @@ test('failed cleanup releases its debugger connection',async()=>{
 });
 test('Windows process memory is reported from KiB as MiB',()=>{
   assert.equal(memoryMegabytes([{memory:{privateBytes:2048}},{memory:{privateBytes:3072}}]),5);
+});
+test('browser cleanup invokes native cache pressure without destroying pages',async()=>{
+  const v=view();assert.equal(await reclaimBrowserMemory(v.webContents),true);assert.deepEqual(v.calls,['attach','Memory.simulatePressureNotification','detach']);
+});
+test('automatic cleanup waits for idle time and avoids media, downloads and editing',()=>{
+  const idle={megabytes:500,idleMilliseconds:31000,audible:false,downloading:false,editing:false};
+  assert.equal(shouldReclaim(idle),true);
+  for(const override of [{megabytes:200},{idleMilliseconds:1000},{audible:true},{downloading:true},{editing:true}])assert.equal(shouldReclaim({...idle,...override}),false);
 });

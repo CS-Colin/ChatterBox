@@ -4,9 +4,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {readActivation} = require('./licensing/verify');
 const {normalizeAccounts,partitionFor,newAccount} = require('./accounts');
-const {reclaimView,memoryMegabytes} = require('./memory');
+const {reclaimView,reclaimBrowserMemory,memoryMegabytes,shouldReclaim} = require('./memory');
+const disabledFeatures=app.commandLine.getSwitchValue('disable-features').split(',').filter(Boolean);
+if(!disabledFeatures.includes('SpareRendererForSitePerProcess')) disabledFeatures.push('SpareRendererForSitePerProcess');
+app.commandLine.appendSwitch('disable-features',disabledFeatures.join(','));
 const accountViews = new Map();
 let reclaiming=false,memoryTimer,startupTimer;
+let lastInputAt=Date.now(),activeDownloads=0,lastCleanup=null;
 let accountState;
 let activation;
 let win, chat, tray, prefs, accountEditor, editorAccountId, quitting = false;
@@ -40,14 +44,22 @@ function buildMenu() {
 function show() { win.show(); win.restore(); win.focus(); }
 async function reclaimMemory(manual=false) {
   if(reclaiming || quitting) return;
-  if(!manual && memoryMegabytes(app.getAppMetrics()) < 512) return;
+  const beforeMB=memoryMegabytes(app.getAppMetrics());
+  const audible=[...accountViews.values()].some(view=>!view.webContents.isDestroyed() && view.webContents.isCurrentlyAudible());
+  if(!manual && !shouldReclaim({megabytes:beforeMB,idleMilliseconds:Date.now()-lastInputAt,audible,downloading:activeDownloads>0,editing:!!accountEditor})) return;
+  if(audible || activeDownloads) {if(manual) status('Memory cleanup will wait until playback, calls and downloads finish.');return {deferred:true};}
   reclaiming=true;
   try {
+    const browserCleaned=await reclaimBrowserMemory(win.webContents);
+    let pagesCleaned=0;
     for(const view of accountViews.values()) {
       if(quitting) break;
-      if(manual || view!==chat || !win.isFocused()) await reclaimView(view);
+      if(await reclaimView(view)) pagesCleaned++;
     }
-    if(manual) status('Unused memory cleanup complete · All accounts remain connected');
+    await new Promise(resolve=>setTimeout(resolve,750));
+    lastCleanup={beforeMB,afterMB:memoryMegabytes(app.getAppMetrics()),browserCleaned,pagesCleaned,time:Date.now()};
+    if(manual) status(`Cleanup complete · ${lastCleanup.afterMB} MB app private memory · All accounts remain connected`);
+    return lastCleanup;
   } finally {reclaiming=false;}
 }
 function loadBackgroundAccounts() {
@@ -67,7 +79,9 @@ async function checkUpdates() {
 }
 function createAccountView(account) {
   const view = new WebContentsView({webPreferences:{partition:partitionFor(account.id),contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:true}});
+  view.setVisible(false);
   const wc=view.webContents;
+  wc.on('before-input-event',()=>{lastInputAt=Date.now();});
   wc.setUserAgent(wc.getUserAgent().replace(/ Electron\/\S+/g,'').replace(/ chatterbox-desktop\/\S+/gi,''));
   const ses = wc.session;
   const allowed = new Set(['notifications','media','clipboard-sanitized-write','fullscreen']);
@@ -77,10 +91,12 @@ function createAccountView(account) {
   wc.on('will-navigate',(event,url) => { if(!trusted(url)) {event.preventDefault(); external(url);} });
   wc.on('did-fail-load',(_e,code,_desc,url,main) => {if(view === chat && main && code !== -3) status('WhatsApp could not load. Check your connection, then press Reload.');});
   wc.on('did-finish-load',() => {if(view === chat) status('Your personal WhatsApp companion');});
-  ses.on('will-download',async (_e,item) => {
-    const result = await dialog.showSaveDialog(win,{defaultPath:path.join(app.getPath('downloads'),path.basename(item.getFilename()))});
-    if(result.canceled) item.cancel(); else item.setSavePath(result.filePath);
-  });
+  const onDownload=async (_e,item)=>{
+    activeDownloads++;item.once('done',()=>{activeDownloads=Math.max(0,activeDownloads-1);});
+    try {const result=await dialog.showSaveDialog(win,{defaultPath:path.join(app.getPath('downloads'),path.basename(item.getFilename()))});if(result.canceled)item.cancel();else item.setSavePath(result.filePath);}catch{item.cancel();}
+  };
+  ses.on('will-download',onDownload);
+  wc.once('destroyed',()=>ses.removeListener('will-download',onDownload));
   wc.loadURL('https://web.whatsapp.com').catch(()=>{});
   return view;
 }
@@ -88,13 +104,14 @@ function switchAccount(id) {
   const account=accountState.accounts.find(a=>a.id===id);
   if(!account) throw new Error('Account not found');
   if(chat && accountState.activeAccount===id && !chat.webContents.isDestroyed()) return accountState;
-  if(chat) win.contentView.removeChildView(chat);
+  if(chat) {chat.setVisible(false);win.contentView.removeChildView(chat);chat.setBounds({x:0,y:0,width:1,height:1});}
   if(!accountViews.has(id)) accountViews.set(id,createAccountView(account));
   chat=accountViews.get(id);
   win.contentView.addChildView(chat);
   accountState.activeAccount=id;
   saveSettings(accountState);
   layout();
+  chat.setVisible(true);
   win.setTitle(`${account.name} — Chatterbox`);
   status(`${account.name} · Your personal WhatsApp companion`);
   sendAccounts();
@@ -106,7 +123,12 @@ function create() {
   win.loadFile(path.join(__dirname,'ui/index.html'));
   switchAccount(accountState.activeAccount);
   startupTimer=setTimeout(loadBackgroundAccounts,2000);
-  memoryTimer=setInterval(()=>{reclaimMemory().catch(()=>{});},5*60*1000);
+  memoryTimer=setInterval(()=>{reclaimMemory().catch(()=>{});},60*1000);
+  win.webContents.on('before-input-event',()=>{lastInputAt=Date.now();});
+  win.on('hide',()=>{if(chat)chat.setVisible(false);});
+  win.on('minimize',()=>{if(chat)chat.setVisible(false);});
+  win.on('show',()=>{if(chat)chat.setVisible(true);});
+  win.on('restore',()=>{if(chat)chat.setVisible(true);});
   win.on('resize',layout);
   win.on('close',event => {if(!quitting && tray) {event.preventDefault(); win.hide();}});
   // Use a raster icon for Windows tray compatibility.
@@ -156,7 +178,7 @@ ipcMain.handle('action',async (event,action,value) => {
   if(action === 'reload') chat.webContents.reload();
   if(action === 'updates') return checkUpdates();
   if(action === 'memory-reclaim') return reclaimMemory(true);
-  if(action === 'settings') return {githubRepo:settings().githubRepo || '',version:app.getVersion(),startup:app.getLoginItemSettings().openAtLogin,memory:{megabytes:memoryMegabytes(app.getAppMetrics()),connected:accountViews.size,total:accountState.accounts.length},activation:activation ? {name:activation.name,id:activation.id} : null};
+  if(action === 'settings') return {githubRepo:settings().githubRepo || '',version:app.getVersion(),startup:app.getLoginItemSettings().openAtLogin,memory:{megabytes:memoryMegabytes(app.getAppMetrics()),connected:accountViews.size,total:accountState.accounts.length,lastCleanup},activation:activation ? {name:activation.name,id:activation.id} : null};
   if(action === 'save') {
     const githubRepo = String(value.githubRepo || '').trim().replace(/^https:\/\/github\.com\//,'').replace(/\/$/,'');
     if(githubRepo && !/^[\w.-]+\/[\w.-]+$/.test(githubRepo)) throw new Error('Use owner/repository.');
