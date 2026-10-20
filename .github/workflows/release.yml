@@ -37,10 +37,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $label = (Get-Content package.json -Raw | ConvertFrom-Json).releaseLabel
+          if (-not $label) { $label = $version }
           $tag = "v$version"
           gh release view $tag --repo $env:GITHUB_REPOSITORY
           if ($LASTEXITCODE -ne 0) {
-            gh release create $tag --repo $env:GITHUB_REPOSITORY --verify-tag --title "Chatterbox $version" --notes "Chatterbox for Windows with GitHub updates."
+            gh release create $tag --repo $env:GITHUB_REPOSITORY --verify-tag --title "Chatterbox $label" --notes "One active WhatsApp account at a time. Other sign-ins are saved, but inactive accounts are unloaded and do not receive notifications."
             if ($LASTEXITCODE -ne 0) { throw 'Could not create release' }
           }
           $assets = @(Get-ChildItem release -File | Where-Object { $_.Extension -in '.exe', '.blockmap' -or $_.Name -eq 'latest.yml' })

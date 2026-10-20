@@ -1,7 +1,7 @@
 const api=window.chatterbox;
 function describeMemory(memory) {
   const last=memory.lastCleanup;
-  return `About ${memory.megabytes} MB in use. ${memory.connected} of ${memory.total} account pages loaded for notifications.`+(last ? ` Last cleanup: ${last.beforeMB} MB → ${last.afterMB} MB.` : ' Lower-memory mode is active.');
+  return `About ${memory.megabytes} MB in use. One account runs at a time; ${memory.total} sign-ins saved. Only the selected account receives notifications.`+(last ? ` Last cleanup: ${last.beforeMB} MB → ${last.afterMB} MB.` : ' Inactive accounts are unloaded to save memory.');
 }
 api.action('settings').then(s=>{
   if(!s.memory)return;

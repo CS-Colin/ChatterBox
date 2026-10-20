@@ -1,6 +1,6 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
-const {reclaimView,reclaimBrowserMemory,memoryMegabytes,shouldReclaim}=require('./memory');
+const {reclaimView,reclaimBrowserMemory,stopAccountWorkers,memoryMegabytes,shouldReclaim}=require('./memory');
 function view({busy=false,attached=false,fail=false}={}) {
   const calls=[];
   const wc={isDestroyed:()=>false,isLoadingMainFrame:()=>false,isCurrentlyAudible:()=>busy,debugger:{isAttached:()=>attached,attach:()=>{attached=true;calls.push('attach');},sendCommand:async command=>{calls.push(command);if(fail)throw Error('test');},detach:()=>{attached=false;calls.push('detach');}}};
@@ -25,4 +25,7 @@ test('automatic cleanup waits for idle time and avoids media, downloads and edit
   const idle={megabytes:500,idleMilliseconds:31000,audible:false,downloading:false,editing:false};
   assert.equal(shouldReclaim(idle),true);
   for(const override of [{megabytes:200},{idleMilliseconds:1000},{audible:true},{downloading:true},{editing:true}])assert.equal(shouldReclaim({...idle,...override}),false);
+});
+test('account teardown stops service workers without deleting sign-in storage',async()=>{
+  const v=view();assert.equal(await stopAccountWorkers(v),true);assert.deepEqual(v.calls,['attach','ServiceWorker.stopAllWorkers','detach']);
 });

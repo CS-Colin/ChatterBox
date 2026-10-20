@@ -1,6 +1,7 @@
 {
   "name": "chatterbox-desktop",
-  "version": "1.2.3",
+  "version": "1.2.4",
+  "releaseLabel": "1.2.3.1",
   "description": "Your personal WhatsApp desktop companion",
   "author": "Chatterbox",
   "private": true,
@@ -12,6 +13,7 @@
   "build": {
     "appId": "local.chatterbox.desktop",
     "productName": "Chatterbox",
+    "buildVersion": "1.2.3.1",
     "directories": { "output": "release" },
     "files": ["main.js", "accounts.js", "memory.js", "preload.js", "ui/**", "licensing/verify.js", "licensing/public.pem", "package.json"],
     "win": { "target": "nsis", "artifactName": "Chatterbox-Setup-${version}.${ext}" },

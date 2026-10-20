@@ -24,10 +24,13 @@ async function reclaimBrowserMemory(wc) {
   // collecting the JavaScript heap alone cannot release those allocations.
   return runMemoryCommand(wc,'Memory.simulatePressureNotification',{level:'critical'});
 }
+async function stopAccountWorkers(view) {
+  return runMemoryCommand(view.webContents,'ServiceWorker.stopAllWorkers');
+}
 function shouldReclaim({megabytes,idleMilliseconds,audible,downloading,editing}) {
   return megabytes>=384 && idleMilliseconds>=30000 && !audible && !downloading && !editing;
 }
 function memoryMegabytes(metrics) {
   return Math.round(metrics.reduce((total,p)=>total+(p.memory?.privateBytes || 0),0)/1024);
 }
-module.exports={reclaimView,reclaimBrowserMemory,memoryMegabytes,shouldReclaim};
+module.exports={reclaimView,reclaimBrowserMemory,stopAccountWorkers,memoryMegabytes,shouldReclaim};

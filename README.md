@@ -2,17 +2,15 @@
 
 Your personal WhatsApp Web desktop companion. Independent software, not affiliated with WhatsApp or Meta.
 
-## Multiple WhatsApp accounts (1.2)
+## Saved accounts, one running account (1.2.3.1)
 
-Open **Accounts** beside **Edit** in the top menu. Choose **Add account**, enter a label such as Work, and scan the new QR code from that number's WhatsApp Linked devices screen. Choose a name in the Accounts menu to switch; **Rename selected account** changes its label. A checkmark identifies the selected account. WhatsApp uses the full window width. Each number has its own saved browser session. The original Personal account uses the same storage as previous versions, preserving the existing login. The last selected account reopens on launch. All saved accounts load shortly after startup, staggered two seconds apart, and remain running for desktop notifications until the app quits. To sign out of a number, use WhatsApp's own Log out command while that account is selected. Activation covers the app and does not need repeating for additional WhatsApp accounts.
+Open Accounts beside Edit in the top menu. Add account saves a new profile and opens its QR code. Choose a saved account to switch. Rename selected account changes its label. Only the selected account runs. On switching, Chatterbox flushes sign-in storage, stops the previous account's service workers and connections, and destroys its page before creating the next one. Inactive accounts do not receive desktop notifications. Their cookies and IndexedDB data remain saved so switching back normally does not require another QR scan. The original Personal account retains the legacy partition and login. The last selected account opens next time. Switching is deferred while a download is running. Switching also closes any call or media in the old account.
 
-## Memory and desktop notifications (1.2.3)
+## Memory management
 
-All saved account pages stay loaded for desktop notifications. Hardware acceleration remains enabled. Inactive pages are explicitly hidden and their drawing surfaces reduced; switching back restores the normal viewport without signing out or reloading. Closing to the tray or minimizing hides the selected page while its connection remains running.
+The app keeps just one account page loaded, preserving the existing account menu and activation codes. Hardware acceleration stays enabled. Background throttling and idle browser-cache/JavaScript cleanup remain available. Settings shows that only the selected account receives notifications, saved account count, approximate private memory, and before/after cleanup readings. Active WhatsApp itself still consumes RAM; there is no fixed memory cap.
 
-The app checks memory every minute. Above 384 MiB of total private memory, after 30 seconds without keyboard input, it asks Chromium to reclaim discardable browser/image caches and collects unreachable JavaScript objects. It defers during audible playback/calls, downloads, and account editing. It neither freezes nor discards account pages, deletes storage, disables network connections, nor sets a JavaScript heap cap. No spare renderer is kept for faster window creation.
-
-Use Chatterbox > Reclaim unused memory, or the button in Settings, for manual cleanup. Settings shows approximate app private memory and the most recent before/after readings. All-account notifications still depend on WhatsApp, Windows notification permissions, connectivity and linked sessions. Reclaimable caches can grow again as they are used. Active WhatsApp data cannot be eliminated while keeping all accounts online, so no fixed RAM target or guaranteed saving is promised.
+The requested display and Windows file version is 1.2.3.1. The package/updater version and Git tag are 1.2.4 / v1.2.4 because the updater uses three-part semantic versions. The GitHub release title and installer filename display 1.2.3.1.
 
 ## Invitations (version 1.1 and later)
 

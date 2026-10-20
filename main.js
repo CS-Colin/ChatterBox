@@ -4,12 +4,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {readActivation} = require('./licensing/verify');
 const {normalizeAccounts,partitionFor,newAccount} = require('./accounts');
-const {reclaimView,reclaimBrowserMemory,memoryMegabytes,shouldReclaim} = require('./memory');
+const {reclaimView,reclaimBrowserMemory,stopAccountWorkers,memoryMegabytes,shouldReclaim} = require('./memory');
+const displayVersion=require('./package.json').releaseLabel || app.getVersion();
 const disabledFeatures=app.commandLine.getSwitchValue('disable-features').split(',').filter(Boolean);
 if(!disabledFeatures.includes('SpareRendererForSitePerProcess')) disabledFeatures.push('SpareRendererForSitePerProcess');
 app.commandLine.appendSwitch('disable-features',disabledFeatures.join(','));
 const accountViews = new Map();
-let reclaiming=false,memoryTimer,startupTimer;
+let reclaiming=false,memoryTimer,switchQueue=Promise.resolve();
 let lastInputAt=Date.now(),activeDownloads=0,lastCleanup=null;
 let accountState;
 let activation;
@@ -34,7 +35,7 @@ function buildMenu() {
     {label:'Chatterbox',submenu:[{label:'Reload WhatsApp',accelerator:'CmdOrCtrl+R',click:()=>chat.webContents.reload()},{label:'Reclaim unused memory',click:()=>reclaimMemory(true)},{label:'Check for updates',click:checkUpdates},{type:'separator'},{role:'quit'}]},
     {label:'Edit',submenu:[{role:'undo'},{role:'redo'},{type:'separator'},{role:'cut'},{role:'copy'},{role:'paste'},{role:'selectAll'}]},
     {label:'Accounts',id:'accounts-menu',submenu:[
-      ...accountState.accounts.map(a=>({id:`account-${a.id}`,label:a.name.replace(/&/g,'&&'),type:'radio',checked:a.id===accountState.activeAccount,click:()=>switchAccount(a.id)})),
+      ...accountState.accounts.map(a=>({id:`account-${a.id}`,label:a.name.replace(/&/g,'&&'),type:'radio',checked:a.id===accountState.activeAccount,click:()=>switchAccount(a.id).catch(error=>status(error.message))})),
       {type:'separator'},
       {id:'accounts-add',label:'Add account…',accelerator:'CmdOrCtrl+Shift+N',click:()=>openAccountEditor()},
       {id:'accounts-rename',label:'Rename selected account…',click:()=>openAccountEditor(accountState.activeAccount)}
@@ -58,15 +59,9 @@ async function reclaimMemory(manual=false) {
     }
     await new Promise(resolve=>setTimeout(resolve,750));
     lastCleanup={beforeMB,afterMB:memoryMegabytes(app.getAppMetrics()),browserCleaned,pagesCleaned,time:Date.now()};
-    if(manual) status(`Cleanup complete · ${lastCleanup.afterMB} MB app private memory · All accounts remain connected`);
+    if(manual) status(`Cleanup complete · ${lastCleanup.afterMB} MB app private memory · Selected account remains connected`);
     return lastCleanup;
   } finally {reclaiming=false;}
-}
-function loadBackgroundAccounts() {
-  const next=accountState.accounts.find(a=>!accountViews.has(a.id));
-  if(!next || quitting) return;
-  accountViews.set(next.id,createAccountView(next));
-  startupTimer=setTimeout(loadBackgroundAccounts,2000);
 }
 async function checkUpdates() {
   const feed = settings().githubRepo;
@@ -85,8 +80,9 @@ function createAccountView(account) {
   wc.setUserAgent(wc.getUserAgent().replace(/ Electron\/\S+/g,'').replace(/ chatterbox-desktop\/\S+/gi,''));
   const ses = wc.session;
   const allowed = new Set(['notifications','media','clipboard-sanitized-write','fullscreen']);
-  ses.setPermissionRequestHandler((wc,permission,callback,details) => callback(trusted(details.requestingUrl || wc.getURL()) && allowed.has(permission)));
-  ses.setPermissionCheckHandler((wc,permission,origin) => trusted(origin) && allowed.has(permission));
+  const permitted=(permission,origin)=>trusted(origin) && allowed.has(permission) && (permission!=='notifications' || chat===view);
+  ses.setPermissionRequestHandler((sender,permission,callback,details) => callback(permitted(permission,details.requestingUrl || sender?.getURL() || '')));
+  ses.setPermissionCheckHandler((_sender,permission,origin) => permitted(permission,origin));
   wc.setWindowOpenHandler(({url}) => {external(url); return {action:'deny'};});
   wc.on('will-navigate',(event,url) => { if(!trusted(url)) {event.preventDefault(); external(url);} });
   wc.on('did-fail-load',(_e,code,_desc,url,main) => {if(view === chat && main && code !== -3) status('WhatsApp could not load. Check your connection, then press Reload.');});
@@ -101,12 +97,29 @@ function createAccountView(account) {
   return view;
 }
 function switchAccount(id) {
+  const operation=switchQueue.then(()=>performSwitch(id));
+  switchQueue=operation.catch(()=>{});
+  return operation;
+}
+async function performSwitch(id) {
   const account=accountState.accounts.find(a=>a.id===id);
   if(!account) throw new Error('Account not found');
   if(chat && accountState.activeAccount===id && !chat.webContents.isDestroyed()) return accountState;
-  if(chat) {chat.setVisible(false);win.contentView.removeChildView(chat);chat.setBounds({x:0,y:0,width:1,height:1});}
-  if(!accountViews.has(id)) accountViews.set(id,createAccountView(account));
-  chat=accountViews.get(id);
+  if(activeDownloads) throw new Error('Wait for your download to finish before switching accounts.');
+  if(chat) {
+    const previous=chat,previousId=accountState.activeAccount,previousSession=chat.webContents.session;
+    status('Switching accounts…');
+    await stopAccountWorkers(previous);
+    previousSession.flushStorageData();
+    await previousSession.cookies.flushStore();
+    previous.setVisible(false);win.contentView.removeChildView(previous);chat=null;
+    const wc=previous.webContents;
+    if(!wc.isDestroyed()) await new Promise(resolve=>{wc.once('destroyed',resolve);wc.close({waitForBeforeUnload:false});});
+    await previousSession.closeAllConnections().catch(()=>{});
+    accountViews.delete(previousId);
+  }
+  chat=createAccountView(account);
+  accountViews.set(id,chat);
   win.contentView.addChildView(chat);
   accountState.activeAccount=id;
   saveSettings(accountState);
@@ -121,8 +134,7 @@ function create() {
   accountState=normalizeAccounts(settings());
   win = new BrowserWindow({width:1260,height:860,minWidth:800,minHeight:600,title:'Chatterbox',backgroundColor:'#101b23',webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
   win.loadFile(path.join(__dirname,'ui/index.html'));
-  switchAccount(accountState.activeAccount);
-  startupTimer=setTimeout(loadBackgroundAccounts,2000);
+  switchAccount(accountState.activeAccount).catch(error=>status(error.message));
   memoryTimer=setInterval(()=>{reclaimMemory().catch(()=>{});},60*1000);
   win.webContents.on('before-input-event',()=>{lastInputAt=Date.now();});
   win.on('hide',()=>{if(chat)chat.setVisible(false);});
@@ -152,7 +164,7 @@ ipcMain.handle('action',async (event,action,value) => {
       account.name=name; saveSettings(accountState); sendAccounts();
       win.setTitle(`${name} — Chatterbox`); status(`${name} · Your personal WhatsApp companion`);
     } else {
-      const account=newAccount(name);accountState.accounts.push(account);switchAccount(account.id);
+      const account=newAccount(name);accountState.accounts.push(account);await switchAccount(account.id);
     }
     accountEditor.close();return accountState;
   }
@@ -175,10 +187,10 @@ ipcMain.handle('action',async (event,action,value) => {
     prefs = new BrowserWindow({parent:win,width:540,height:580,resizable:false,title:'Chatterbox Settings',autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
     prefs.loadFile(path.join(__dirname,'ui/settings.html')); prefs.on('closed',() => {prefs=null;}); return;
   }
-  if(action === 'reload') chat.webContents.reload();
+  if(action === 'reload' && chat) chat.webContents.reload();
   if(action === 'updates') return checkUpdates();
   if(action === 'memory-reclaim') return reclaimMemory(true);
-  if(action === 'settings') return {githubRepo:settings().githubRepo || '',version:app.getVersion(),startup:app.getLoginItemSettings().openAtLogin,memory:{megabytes:memoryMegabytes(app.getAppMetrics()),connected:accountViews.size,total:accountState.accounts.length,lastCleanup},activation:activation ? {name:activation.name,id:activation.id} : null};
+  if(action === 'settings') return {githubRepo:settings().githubRepo || '',version:displayVersion,startup:app.getLoginItemSettings().openAtLogin,memory:{megabytes:memoryMegabytes(app.getAppMetrics()),connected:accountViews.size,total:accountState.accounts.length,lastCleanup},activation:activation ? {name:activation.name,id:activation.id} : null};
   if(action === 'save') {
     const githubRepo = String(value.githubRepo || '').trim().replace(/^https:\/\/github\.com\//,'').replace(/\/$/,'');
     if(githubRepo && !/^[\w.-]+\/[\w.-]+$/.test(githubRepo)) throw new Error('Use owner/repository.');
@@ -191,7 +203,7 @@ autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = false;
 autoUpdater.on('error',() => status('Update failed. Try again later.'));
 autoUpdater.on('update-not-available',() => status('You have the latest version.'));
-autoUpdater.on('update-available',async info => {const r=await dialog.showMessageBox(win,{type:'info',message:`Chatterbox ${info.version} is available.`,buttons:['Download update','Later'],cancelId:1});if(r.response===0) autoUpdater.downloadUpdate().catch(() => status('Download failed. Try again later.'));});
+autoUpdater.on('update-available',async info => {const label=typeof info.releaseName==='string' ? info.releaseName.replace(/^Chatterbox\s+/,'') : info.version;const r=await dialog.showMessageBox(win,{type:'info',message:`Chatterbox ${label} is available.`,buttons:['Download update','Later'],cancelId:1});if(r.response===0) autoUpdater.downloadUpdate().catch(() => status('Download failed. Try again later.'));});
 autoUpdater.on('download-progress',p => status(`Downloading update: ${Math.round(p.percent)}%`));
 autoUpdater.on('update-downloaded',async () => {const r=await dialog.showMessageBox(win,{message:'Update ready. Restart Chatterbox to install it?',buttons:['Restart and install','Later'],cancelId:1}); if(r.response===0) {quitting=true;autoUpdater.quitAndInstall();}});
 if(!app.requestSingleInstanceLock()) app.quit(); else {
@@ -204,7 +216,7 @@ if(!app.requestSingleInstanceLock()) app.quit(); else {
     }
     create();
   });
-  app.on('before-quit',() => {quitting=true;clearInterval(memoryTimer);clearTimeout(startupTimer);for(const view of accountViews.values()) if(!view.webContents.isDestroyed()) view.webContents.close();});
+  app.on('before-quit',() => {quitting=true;clearInterval(memoryTimer);for(const view of accountViews.values()) if(!view.webContents.isDestroyed()) view.webContents.close();});
   app.on('window-all-closed',() => app.quit());
 }
 
