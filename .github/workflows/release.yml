@@ -19,7 +19,6 @@ jobs:
         run: |
           node --check main.js
           node --check preload.js
-          node --check ui/app.js
           node --check ui/settings.js
           node --check ui/account.js
           node --test licensing/verify.test.js
@@ -42,7 +41,7 @@ jobs:
           $tag = "v$version"
           gh release view $tag --repo $env:GITHUB_REPOSITORY
           if ($LASTEXITCODE -ne 0) {
-            gh release create $tag --repo $env:GITHUB_REPOSITORY --verify-tag --title "Chatterbox $label" --notes "One active WhatsApp account at a time. Other sign-ins are saved, but inactive accounts are unloaded and do not receive notifications."
+            gh release create $tag --repo $env:GITHUB_REPOSITORY --verify-tag --title "Chatterbox $label" --notes "Removed the large toolbar. Reload, Check for updates and Settings now appear in the top menu bar. WhatsApp uses the full content height. Only the selected account runs."
             if ($LASTEXITCODE -ne 0) { throw 'Could not create release' }
           }
           $assets = @(Get-ChildItem release -File | Where-Object { $_.Extension -in '.exe', '.blockmap' -or $_.Name -eq 'latest.yml' })

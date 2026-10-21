@@ -18,11 +18,16 @@ let win, chat, tray, prefs, accountEditor, editorAccountId, quitting = false;
 const configPath = () => path.join(app.getPath('userData'), 'settings.json');
 function settings() { try { return JSON.parse(fs.readFileSync(configPath(), 'utf8')); } catch { return {}; } }
 function saveSettings(patch) { fs.writeFileSync(configPath(),JSON.stringify({...settings(),...patch},null,2)); }
-function sendAccounts() { win.webContents.send('accounts',accountState); buildMenu(); }
-function status(text) { if(win && !win.isDestroyed()) win.webContents.send('status', text); }
+function sendAccounts() { buildMenu(); }
+function status(text) {
+  if(!win || win.isDestroyed()) return;
+  const account=accountState?.accounts.find(a=>a.id===accountState.activeAccount);
+  const title=account ? account.name+' — Chatterbox' : 'Chatterbox';
+  win.setTitle(text.includes('Your personal WhatsApp companion') ? title : title+' · '+text);
+}
 function trusted(url) { try { const u = new URL(url); return u.protocol === 'https:' && u.hostname === 'web.whatsapp.com'; } catch { return false; } }
 function external(url) { try { if(['https:', 'http:', 'mailto:'].includes(new URL(url).protocol)) shell.openExternal(url); } catch {} }
-function layout() { if(!chat) return; const [width,height] = win.getContentSize(); chat.setBounds({x:0,y:64,width,height:Math.max(0,height-64)}); }
+function layout() { if(!chat) return; const [width,height] = win.getContentSize(); chat.setBounds({x:0,y:0,width,height}); }
 function openAccountEditor(id=null) {
   if(accountEditor && !accountEditor.isDestroyed()) return accountEditor.focus();
   editorAccountId=id;
@@ -30,16 +35,25 @@ function openAccountEditor(id=null) {
   accountEditor.loadFile(path.join(__dirname,'ui/account.html'));
   accountEditor.on('closed',()=>{accountEditor=null;editorAccountId=null;});
 }
+function openSettings() {
+  if(prefs && !prefs.isDestroyed()) return prefs.focus();
+  prefs = new BrowserWindow({parent:win,width:540,height:580,resizable:false,title:'Chatterbox Settings',autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
+  prefs.loadFile(path.join(__dirname,'ui/settings.html')); prefs.on('closed',()=>{prefs=null;});
+}
+function reloadCurrentAccount() { if(chat && !chat.webContents.isDestroyed()) chat.webContents.reload(); }
 function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    {label:'Chatterbox',submenu:[{label:'Reload WhatsApp',accelerator:'CmdOrCtrl+R',click:()=>chat.webContents.reload()},{label:'Reclaim unused memory',click:()=>reclaimMemory(true)},{label:'Check for updates',click:checkUpdates},{type:'separator'},{role:'quit'}]},
+    {label:'Chatterbox',submenu:[{label:'Reload WhatsApp',accelerator:'CmdOrCtrl+R',click:reloadCurrentAccount},{label:'Reclaim unused memory',click:()=>reclaimMemory(true)},{label:'Check for updates',click:checkUpdates},{type:'separator'},{role:'quit'}]},
     {label:'Edit',submenu:[{role:'undo'},{role:'redo'},{type:'separator'},{role:'cut'},{role:'copy'},{role:'paste'},{role:'selectAll'}]},
     {label:'Accounts',id:'accounts-menu',submenu:[
       ...accountState.accounts.map(a=>({id:`account-${a.id}`,label:a.name.replace(/&/g,'&&'),type:'radio',checked:a.id===accountState.activeAccount,click:()=>switchAccount(a.id).catch(error=>status(error.message))})),
       {type:'separator'},
       {id:'accounts-add',label:'Add account…',accelerator:'CmdOrCtrl+Shift+N',click:()=>openAccountEditor()},
       {id:'accounts-rename',label:'Rename selected account…',click:()=>openAccountEditor(accountState.activeAccount)}
-    ]}
+    ]},
+    {id:'toolbar-reload',label:'Reload',click:reloadCurrentAccount},
+    {id:'toolbar-updates',label:'Check for updates',click:checkUpdates},
+    {id:'toolbar-settings',label:'Settings',click:openSettings}
   ]));
 }
 function show() { win.show(); win.restore(); win.focus(); }
@@ -182,11 +196,7 @@ ipcMain.handle('action',async (event,action,value) => {
     win.setTitle(`${name} — Chatterbox`);
     return accountState;
   }
-  if(action === 'open-settings') {
-    if(prefs && !prefs.isDestroyed()) return prefs.focus();
-    prefs = new BrowserWindow({parent:win,width:540,height:580,resizable:false,title:'Chatterbox Settings',autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
-    prefs.loadFile(path.join(__dirname,'ui/settings.html')); prefs.on('closed',() => {prefs=null;}); return;
-  }
+  if(action === 'open-settings') return openSettings();
   if(action === 'reload' && chat) chat.webContents.reload();
   if(action === 'updates') return checkUpdates();
   if(action === 'memory-reclaim') return reclaimMemory(true);

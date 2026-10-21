@@ -2,6 +2,10 @@
 
 Your personal WhatsApp Web desktop companion. Independent software, not affiliated with WhatsApp or Meta.
 
+## Compact top menu (1.2.5)
+
+The large in-window toolbar is removed. Reload, Check for updates and Settings are direct items in the native menu bar beside Chatterbox, Edit and Accounts. WhatsApp uses the full content height. Loading and update status appears in the window title.
+
 ## Saved accounts, one running account (1.2.3.1)
 
 Open Accounts beside Edit in the top menu. Add account saves a new profile and opens its QR code. Choose a saved account to switch. Rename selected account changes its label. Only the selected account runs. On switching, Chatterbox flushes sign-in storage, stops the previous account's service workers and connections, and destroys its page before creating the next one. Inactive accounts do not receive desktop notifications. Their cookies and IndexedDB data remain saved so switching back normally does not require another QR scan. The original Personal account retains the legacy partition and login. The last selected account opens next time. Switching is deferred while a download is running. Switching also closes any call or media in the old account.

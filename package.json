@@ -1,22 +1,55 @@
 {
   "name": "chatterbox-desktop",
-  "version": "1.2.4",
-  "releaseLabel": "1.2.3.1",
+  "version": "1.2.5",
+  "releaseLabel": "1.2.5",
   "description": "Your personal WhatsApp desktop companion",
   "author": "Chatterbox",
   "private": true,
-  "repository": { "type": "git", "url": "https://github.com/CS-Colin/ChatterBox.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CS-Colin/ChatterBox.git"
+  },
   "main": "main.js",
-  "scripts": { "start": "electron .", "dist": "electron-builder --config electron-builder.config.cjs --win nsis --publish never", "release": "electron-builder --config electron-builder.config.cjs --win nsis --publish always" },
-  "dependencies": { "electron-updater": "^6.6.2" },
-  "devDependencies": { "electron": "^40.0.0", "electron-builder": "^26.0.12" },
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --config electron-builder.config.cjs --win nsis --publish never",
+    "release": "electron-builder --config electron-builder.config.cjs --win nsis --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "^6.6.2"
+  },
+  "devDependencies": {
+    "electron": "^40.0.0",
+    "electron-builder": "^26.0.12"
+  },
   "build": {
     "appId": "local.chatterbox.desktop",
     "productName": "Chatterbox",
-    "buildVersion": "1.2.3.1",
-    "directories": { "output": "release" },
-    "files": ["main.js", "accounts.js", "memory.js", "preload.js", "ui/**", "licensing/verify.js", "licensing/public.pem", "package.json"],
-    "win": { "target": "nsis", "artifactName": "Chatterbox-Setup-${version}.${ext}" },
-    "nsis": { "include": "build/activation.nsh", "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "deleteAppDataOnUninstall": false }
+    "buildVersion": "1.2.5.0",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "accounts.js",
+      "memory.js",
+      "preload.js",
+      "ui/**",
+      "licensing/verify.js",
+      "licensing/public.pem",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "artifactName": "Chatterbox-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "include": "build/activation.nsh",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "deleteAppDataOnUninstall": false
+    }
   }
 }
